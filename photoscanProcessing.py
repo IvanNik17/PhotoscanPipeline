@@ -7,7 +7,7 @@ Created on Thu Sep 20 09:56:41 2018
 
 import numpy as np
 import PhotoScan
-import os,re,sys
+import os,re
 
 # get the photo (.JPG) list in specified folder
 def getPhotoList(root_path, photoList):
@@ -19,10 +19,12 @@ def getPhotoList(root_path, photoList):
                 #print (cur_path)
                 photoList.append(cur_path)
             
-def photoscanProcess(root_path):    
-    
-    #PhotoScan.app.messageBox('hello world! \n')
+def photoscanProcess(root_path, coordReference, outputPointCloud, alignAccuracy, keypointLimit, tiepointLimit, denseCloudQuality, 
+                     filterReprojectionError_thresh, filterImageCount_thresh, filterReconstructionUncertainty_thresh, decimateMesh_size):
+
+
    PhotoScan.app.console.clear()
+   
 
     ## construct the document class
    doc = PhotoScan.app.document
@@ -33,52 +35,51 @@ def photoscanProcess(root_path):
 #    doc.save( psxfile )
 #    print ('>> Saved to: ' + psxfile)
 
-    ## point to current chunk
-    #chunk = doc.chunk
 
     ## add a new chunk
    chunk = doc.addChunk()
 
-    ## set coordinate system
-    # - PhotoScan.CoordinateSystem("EPSG::4612") -->  JGD2000
-#    chunk.crs = PhotoScan.CoordinateSystem("EPSG::4612")
 
-    ################################################################################################
-    ### get photo list ###
    photoList = []
    getPhotoList(root_path, photoList)
-    #print (photoList)
+   print (photoList)
     
-    ################################################################################################
-    ### add photos ###
-    # addPhotos(filenames[, progress])
-    # - filenames(list of string) – A list of file paths.
+
    chunk.addPhotos(photoList)
-   referencePath = root_path + "/CamPos.txt"
+   referencePath = root_path + "/" + coordReference
    chunk.loadReference(referencePath,delimiter = " ")
 
-   chunk.matchPhotos(accuracy=PhotoScan.LowAccuracy, preselection=PhotoScan.ReferencePreselection, filter_mask=False, keypoint_limit=0, tiepoint_limit=0)
+#   chunk.matchPhotos(accuracy=alignAccuracy, preselection=PhotoScan.ReferencePreselection, filter_mask=False
+   chunk.matchPhotos(accuracy=PhotoScan.HighAccuracy, generic_preselection=False, reference_preselection=True, keypoint_limit=keypointLimit, tiepoint_limit=tiepointLimit)
+
+   
    chunk.alignCameras()
    
    
+   if filterReprojectionError_thresh !=0:
+       f = PhotoScan.PointCloud.Filter()
+       f.init(chunk, criterion = PhotoScan.PointCloud.Filter.ReprojectionError)
+       f.removePoints(filterReprojectionError_thresh)
    
-   f = PhotoScan.PointCloud.Filter()
-   f.init(chunk, criterion = PhotoScan.PointCloud.Filter.ReprojectionError)
-   f.removePoints(0.3)
+   if filterImageCount_thresh !=0:
+       f = PhotoScan.PointCloud.Filter()
+       f.init(chunk, criterion = PhotoScan.PointCloud.Filter.ImageCount)
+       f.removePoints(filterImageCount_thresh)
    
-   f = PhotoScan.PointCloud.Filter()
-   f.init(chunk, criterion = PhotoScan.PointCloud.Filter.ImageCount)
-   f.removePoints(2)
-   
-   f = PhotoScan.PointCloud.Filter()
-   f.init(chunk, criterion = PhotoScan.PointCloud.Filter.ReconstructionUncertainty)
-   f.removePoints(15)
+   if filterReconstructionUncertainty_thresh !=0:
+       f = PhotoScan.PointCloud.Filter()
+       f.init(chunk, criterion = PhotoScan.PointCloud.Filter.ReconstructionUncertainty)
+       f.removePoints(filterReconstructionUncertainty_thresh)
       
-   chunk.buildDenseCloud(quality=PhotoScan.LowQuality, filter=PhotoScan.AggressiveFiltering)
+   chunk.buildDepthMaps(quality=denseCloudQuality, filter=PhotoScan.ModerateFiltering)
+   chunk.buildDenseCloud()
    
    chunk.buildModel(surface=PhotoScan.Arbitrary, interpolation=PhotoScan.EnabledInterpolation, face_count=0)
    
-#   chunk.decimateModel(face_count = 3000000)
+   
+   if decimateMesh_size != 0:
+       
+       chunk.decimateModel(face_count = 3000000)
    
    model = chunk.model
 
@@ -100,7 +101,7 @@ def photoscanProcess(root_path):
         allVerts[t] = tempVertCoord
     
     
-   np.savetxt(root_path + '/Scale_verts.txt', allVerts, delimiter=',', fmt='%1.5f') 
+   np.savetxt(root_path + '/' + outputPointCloud, allVerts, delimiter=',', fmt='%1.5f') 
     
    print("FINISED!")
    
@@ -170,6 +171,26 @@ def photoscanProcess(root_path):
 #    ################################################################################################
 #    doc.save()
 
-# main
-folder = "F:/Ivan/ScalePaper_photos/Angel_named"
-photoscanProcess(folder)
+if __name__ == "__main__":
+    # the folder needs to contain all the images and the reference file    
+    folder = "F:/Ivan/MilestoneMeeting_3D_reconstructions/Blade_togetherWithMikkel/oneband"
+    coordReference = "positions.txt"
+    outputPointCloud = "outputCloud.txt"
+    
+    alignAccuracy = PhotoScan.MediumAccuracy
+    #add 0 if you don't want to have any limit     
+    keypointLimit = 80000
+    tiepointLimit = 80000
+    
+    denseCloudQuality = PhotoScan.MediumQuality
+    
+    #add 0 for no filter    
+    filterReprojectionError_thresh = 0.3
+    filterImageCount_thresh = 2
+    filterReconstructionUncertainty_thresh = 15
+    
+    #add 0 for no decimation
+    decimateMesh_size = 3000000
+    
+    photoscanProcess(folder, coordReference, outputPointCloud, alignAccuracy, keypointLimit, tiepointLimit, denseCloudQuality, 
+                     filterReprojectionError_thresh, filterImageCount_thresh, filterReconstructionUncertainty_thresh, decimateMesh_size)
